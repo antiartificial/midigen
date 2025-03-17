@@ -33,7 +33,9 @@ export const notesToMIDI = (melody) => {
   };
   
   try {
-    if (!window.MidiWriter) {
+    // Check if MidiWriter is loaded
+    if (typeof window.MidiWriter === 'undefined') {
+      console.error('MidiWriter is not loaded yet');
       throw new Error('MidiWriter not loaded yet');
     }
     

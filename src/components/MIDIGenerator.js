@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import MelodyItem from './MelodyItem';
+import LoadingIndicator from './LoadingIndicator';
 import useAudioContext from '../hooks/useAudioContext';
 import useMIDIWriter from '../hooks/useMIDIWriter';
 import { durationToSeconds, notesToMIDI } from '../utils/audioUtils';
@@ -23,6 +24,7 @@ const MIDIGenerator = () => {
   
   const { playNote, stopAllOscillators } = useAudioContext();
   const { isLoaded } = useMIDIWriter();
+  const [midiLoading, setMidiLoading] = useState(false);
   
   // Check if any melody is currently playing
   const isAnyPlaying = () => Object.values(playingMelodies).some(p => p);
@@ -161,28 +163,44 @@ const MIDIGenerator = () => {
   };
   
   // Download as MIDI
-  const downloadMIDI = (melody) => {
+  const downloadMIDI = useCallback((melody) => {
     if (!isLoaded()) {
-      alert('MIDI library not loaded yet. Please try again in a few seconds.');
+      setMidiLoading(true);
+      // Try again in a second
+      setTimeout(() => {
+        if (isLoaded()) {
+          setMidiLoading(false);
+          downloadMIDI(melody);
+        } else {
+          alert('MIDI library could not be loaded. Please refresh the page and try again.');
+          setMidiLoading(false);
+        }
+      }, 1500);
       return;
     }
     
-    const midiData = notesToMIDI(melody);
-    if (midiData === '#') {
-      return;
+    try {
+      const midiData = notesToMIDI(melody);
+      if (midiData === '#') {
+        return;
+      }
+      
+      const link = document.createElement('a');
+      link.href = midiData;
+      link.download = `${melody.name.replace(/\s+/g, '_')}.mid`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (error) {
+      console.error('Error creating MIDI:', error);
+      alert('There was an error creating the MIDI file. Please try again.');
     }
-    
-    const link = document.createElement('a');
-    link.href = midiData;
-    link.download = `${melody.name.replace(/\s+/g, '_')}.mid`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
+  }, [isLoaded]);
   
   // Render the UI
   return (
-    <div className="p-6 max-w-4xl mx-auto bg-gray-100 rounded-lg shadow">
+    <div className="p-6 max-w-4xl mx-auto bg-gray-100 rounded-lg shadow relative">
+      <LoadingIndicator loading={midiLoading} message="Loading MIDI library..." />
       <h1 className="text-2xl font-bold mb-4">MIDI Generator</h1>
       
       <div className="mb-4 grid grid-cols-1 md:grid-cols-2 gap-4">
