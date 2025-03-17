@@ -1,5 +1,5 @@
 import React from 'react';
-import MIDIGenerator from './MIDIGenerator';
+import MIDIGenerator from './components/MIDIGenerator';
 import './App.css';
 
 function App() {

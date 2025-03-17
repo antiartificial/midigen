@@ -1,3 +1,50 @@
+  // Render the UI
+  return (
+    <div className="p-6 max-w-4xl mx-auto bg-gray-100 rounded-lg shadow">
+      <h1 className="text-2xl font-bold mb-4">MIDI Generator</h1>
+      
+      <div className="mb-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+        <label className="block text-sm font-medium mb-2">
+          Bars Length:
+          <select 
+            value={barLength} 
+            onChange={(e) => setBarLength(parseInt(e.target.value))}
+            className="ml-2 p-1 border rounded"
+          >
+            <option value={8}>8 Bars</option>
+            <option value={16}>16 Bars</option>
+            <option value={32}>32 Bars</option>
+          </select>
+        </label>
+        
+        <label className="block text-sm font-medium mb-2">
+          Style:
+          <select 
+            value={selectedStyle} 
+            onChange={(e) => setSelectedStyle(e.target.value)}
+            className="ml-2 p-1 border rounded"
+          >
+            <option value="synthwave-disco">80s Synthwave & Italian Disco</option>
+            <option value="metal">Metal</option>
+          </select>
+        </label>
+      </div>
+      
+      <div className="flex space-x-4 mb-6">
+        <button 
+          onClick={generateMelodies}
+          className="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700"
+        >
+          Generate Melodies
+        </button>
+        
+        <button 
+          onClick={playMelodies}
+          className={`px-4 py-2 ${isAnyPlaying() ? 'bg-red-500 hover:bg-red-600' : 'bg-blue-500 hover:bg-blue-600'} text-white rounded`}
+        >
+          {isAnyPlaying() ? 'Stop All' : 'Play Selected'}
+        </button>
+      </div>
 import React, { useState, useEffect, useRef } from 'react';
 
 const MIDIGenerator = () => {
@@ -10,6 +57,23 @@ const MIDIGenerator = () => {
   // Audio context
   const audioContextRef = useRef(null);
   const oscillatorsRef = useRef({});
+  
+  // Load MidiWriter.js script
+  useEffect(() => {
+    const loadMidiWriter = async () => {
+      if (!window.MidiWriter) {
+        const script = document.createElement('script');
+        script.src = 'https://cdn.jsdelivr.net/npm/midi-writer-js@2.1.4/browser/midi-writer-js.min.js';
+        script.async = true;
+        script.onload = () => {
+          console.log('MidiWriter.js loaded successfully');
+        };
+        document.body.appendChild(script);
+      }
+    };
+    
+    loadMidiWriter();
+  }, []);
   
   // Initialize Web Audio API
   useEffect(() => {
@@ -112,6 +176,119 @@ const MIDIGenerator = () => {
       case '8n': return 0.25; // Eighth note
       case '16n': return 0.125; // Sixteenth note
       default: return 0.5; // Default to quarter note
+    }
+  };
+  
+  // Convert notes to MIDI format compatible with FL Studio
+  const notesToMIDI = (melody) => {
+    // Function to convert note name to MIDI note number
+    const noteToMIDINumber = (note) => {
+      const notes = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+      const noteName = note.slice(0, -1);
+      const octave = parseInt(note.slice(-1));
+      return notes.indexOf(noteName) + (octave + 1) * 12;
+    };
+    
+    try {
+      if (!window.MidiWriter) {
+        throw new Error('MidiWriter not loaded yet');
+      }
+      
+      // Create a MIDI writer track
+      const track = new window.MidiWriter.Track();
+      
+      // Set track name and instrument
+      track.addEvent(
+        new window.MidiWriter.MetaEvent({
+          data: [
+            {
+              delta: 0,
+              type: 0x03, // Track name
+              data: melody.name
+            }
+          ]
+        })
+      );
+      
+      // Choose an appropriate instrument based on melody type
+      let instrument = 1; // Default: Acoustic Grand Piano
+      
+      if (melody.type === 'bass') {
+        instrument = 35; // Electric Bass
+      } else if (melody.type === 'arpeggio') {
+        instrument = 81; // Synth Lead
+      } else if (melody.type === 'lead') {
+        instrument = 82; // Synth Calliope
+      } else if (melody.type === 'riff') {
+        instrument = 30; // Distortion Guitar
+      } else if (melody.type === 'drums') {
+        // For drums, we'll use MIDI channel 10 (index 9) and specific note numbers
+        instrument = 0;
+      }
+      
+      track.addEvent(new window.MidiWriter.ProgramChangeEvent({instrument: instrument}));
+      
+      // Set tempo (120 BPM)
+      track.setTempo(120);
+      
+      // Convert all notes to their MIDI equivalents
+      const midiNotes = melody.notes.map(note => {
+        // Convert duration string to MIDI duration
+        let duration = '4';
+        switch(note.duration) {
+          case '2n': duration = '2'; break;
+          case '4n': duration = '4'; break;
+          case '4n.': duration = 'd4'; break; // dotted quarter
+          case '8n': duration = '8'; break;
+          case '16n': duration = '16'; break;
+          default: duration = '4';
+        }
+        
+        // Convert time to ticks
+        const ticks = Math.round(note.time * 128); // 128 ticks per quarter note at 120 BPM
+        
+        // Use percussion channel (10) for drums
+        const channel = melody.type === 'drums' ? 10 : 1;
+        
+        return {
+          pitch: noteToMIDINumber(note.note),
+          duration: duration,
+          tick: ticks,
+          velocity: note.velocity ? Math.floor(note.velocity * 100) : 80,
+          channel: channel
+        };
+      });
+      
+      // Sort notes by tick (start time)
+      midiNotes.sort((a, b) => a.tick - b.tick);
+      
+      // Add each note to the track
+      let currentTick = 0;
+      
+      midiNotes.forEach(note => {
+        const delta = note.tick - currentTick;
+        currentTick = note.tick;
+        
+        track.addEvent(new window.MidiWriter.NoteEvent({
+          pitch: note.pitch,
+          duration: note.duration,
+          wait: delta > 0 ? 'T' + delta : 0, // Use delta time if positive
+          velocity: note.velocity,
+          channel: note.channel
+        }));
+      });
+      
+      // Create a Type 1 MIDI file with one track
+      const write = new window.MidiWriter.Writer([track]);
+      
+      // Return as data URI
+      return write.dataUri();
+    } catch (error) {
+      console.error('Error creating MIDI file:', error);
+      
+      // Fallback to placeholder if MidiWriter isn't loaded
+      alert('MIDI library not loaded yet. Please try again in a few seconds.');
+      return '#';
     }
   };
   
@@ -386,22 +563,6 @@ const MIDIGenerator = () => {
     };
   };
   
-  // Convert notes to MIDI format
-  const notesToMIDI = (melody) => {
-    // This is a simplified version - in a real app, you'd want to use a proper MIDI library
-    const noteToMIDINumber = (note) => {
-      const notes = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
-      const [noteName, octave] = [note.slice(0, -1), parseInt(note.slice(-1))];
-      return notes.indexOf(noteName) + (octave + 1) * 12;
-    };
-    
-    let midiData = 'data:audio/midi;base64,';
-    // This would need a full MIDI encoding implementation
-    // For now, let's create a placeholder that would represent MIDI data
-    const placeholderMIDI = btoa(`MIDI data for ${melody.name} with ${melody.notes.length} notes`);
-    return midiData + placeholderMIDI;
-  };
-  
   // Check if any melody is currently playing
   const isAnyPlaying = () => Object.values(playingMelodies).some(p => p);
   
@@ -563,6 +724,11 @@ const MIDIGenerator = () => {
   // Download as MIDI
   const downloadMIDI = (melody) => {
     const midiData = notesToMIDI(melody);
+    if (midiData === '#') {
+      // MidiWriter not loaded yet
+      return;
+    }
+    
     const link = document.createElement('a');
     link.href = midiData;
     link.download = `${melody.name.replace(/\s+/g, '_')}.mid`;
@@ -570,135 +736,3 @@ const MIDIGenerator = () => {
     link.click();
     document.body.removeChild(link);
   };
-  
-  return (
-    <div className="p-6 max-w-4xl mx-auto bg-gray-100 rounded-lg shadow">
-      <h1 className="text-2xl font-bold mb-4">MIDI Generator</h1>
-      
-      <div className="mb-4 grid grid-cols-1 md:grid-cols-2 gap-4">
-        <label className="block text-sm font-medium mb-2">
-          Bars Length:
-          <select 
-            value={barLength} 
-            onChange={(e) => setBarLength(parseInt(e.target.value))}
-            className="ml-2 p-1 border rounded"
-          >
-            <option value={8}>8 Bars</option>
-            <option value={16}>16 Bars</option>
-            <option value={32}>32 Bars</option>
-          </select>
-        </label>
-        
-        <label className="block text-sm font-medium mb-2">
-          Style:
-          <select 
-            value={selectedStyle} 
-            onChange={(e) => setSelectedStyle(e.target.value)}
-            className="ml-2 p-1 border rounded"
-          >
-            <option value="synthwave-disco">80s Synthwave & Italian Disco</option>
-            <option value="metal">Metal</option>
-          </select>
-        </label>
-      </div>
-      
-      <div className="flex space-x-4 mb-6">
-        <button 
-          onClick={generateMelodies}
-          className="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700"
-        >
-          Generate Melodies
-        </button>
-        
-        <button 
-          onClick={playMelodies}
-          className={`px-4 py-2 ${isAnyPlaying() ? 'bg-red-500 hover:bg-red-600' : 'bg-blue-500 hover:bg-blue-600'} text-white rounded`}
-        >
-          {isAnyPlaying() ? 'Stop All' : 'Play Selected'}
-        </button>
-      </div>
-      
-      {melodies.length > 0 && (
-        <div className="space-y-4">
-          <h2 className="text-xl font-semibold">Your Melodies</h2>
-          
-          <div className="flex items-center space-x-4 mb-2">
-            <button 
-              onClick={selectAllMelodies}
-              className="px-3 py-1 bg-gray-500 text-white text-sm rounded hover:bg-gray-600"
-            >
-              Select All
-            </button>
-            <button 
-              onClick={deselectAllMelodies}
-              className="px-3 py-1 bg-gray-500 text-white text-sm rounded hover:bg-gray-600"
-            >
-              Deselect All
-            </button>
-          </div>
-          
-          {melodies.map((melody, index) => (
-            <div key={index} className="p-4 bg-white rounded shadow">
-              <div className="flex justify-between items-center mb-2">
-                <div className="flex items-center">
-                  <input
-                    type="checkbox"
-                    id={`melody-${index}`}
-                    checked={!!selectedMelodies[index]}
-                    onChange={() => toggleMelodySelection(index)}
-                    className="mr-3 h-4 w-4"
-                  />
-                  <h3 className="font-medium">{melody.name}</h3>
-                </div>
-                <div className="flex space-x-2">
-                  <button 
-                    onClick={() => playSingleMelody(index)}
-                    className={`px-3 py-1 ${playingMelodies[index] ? 'bg-red-500 hover:bg-red-600' : 'bg-blue-500 hover:bg-blue-600'} text-white text-sm rounded`}
-                  >
-                    {playingMelodies[index] ? 'Stop' : 'Play'}
-                  </button>
-                  <button 
-                    onClick={() => downloadMIDI(melody)}
-                    className="px-3 py-1 bg-green-500 text-white text-sm rounded hover:bg-green-600"
-                  >
-                    Download MIDI
-                  </button>
-                </div>
-              </div>
-              <div className="text-sm text-gray-600">
-                {melody.notes.length} notes, {barLength} bars
-              </div>
-              
-              <div className="mt-2 h-16 bg-gray-100 rounded overflow-hidden relative">
-                {melody.notes.map((note, i) => {
-                  // Simple visualization of the notes
-                  const noteIndex = note.note.charCodeAt(0) - 65; // A=0, B=1, etc.
-                  const octave = parseInt(note.note.slice(-1));
-                  const height = 4 + (noteIndex + (octave * 7)) % 12;
-                  
-                  return (
-                    <div 
-                      key={i}
-                      className={`absolute h-${height} w-2 rounded-sm ${melody.type === 'bass' ? 'bg-blue-500' : melody.type === 'arpeggio' ? 'bg-purple-500' : melody.type === 'lead' ? 'bg-pink-500' : melody.type === 'riff' ? 'bg-yellow-500' : melody.type === 'drums' ? 'bg-red-500' : 'bg-gray-500'}`}
-                      style={{
-                        left: `${(note.time / (barLength * 2)) * 100}%`, // 2 seconds per measure at 120 BPM
-                        bottom: '0',
-                        height: `${height * 6}%`
-                      }}
-                    />
-                  );
-                })}
-              </div>
-            </div>
-          ))}
-          
-          <div className="mt-6 text-sm text-gray-600">
-            <p>Note: This is a simplified MIDI generator. For professional production, you might want to use a more sophisticated MIDI tool or DAW.</p>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-};
-
-export default MIDIGenerator;
