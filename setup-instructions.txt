@@ -1,0 +1,50 @@
+## MIDI Generator App - Setup Instructions
+
+Follow these steps to get your MIDI Generator app up and running:
+
+1. **Navigate to the project directory**:
+   ```
+   cd /Users/arti/Desktop/Claude/midigen
+   ```
+
+2. **Install dependencies**:
+   ```
+   npm install
+   ```
+   This will install React, Tone.js, and other required packages defined in package.json.
+
+3. **Start the development server**:
+   ```
+   npm start
+   ```
+   This will start the app in development mode and should automatically open a browser window to http://localhost:3000.
+
+4. If the browser doesn't open automatically, navigate to:
+   ```
+   http://localhost:3000
+   ```
+
+## Notes on Functionality:
+
+- The app allows you to generate melodies in different styles (80s Synthwave/Disco and Metal)
+- You can select which melodies to play using the checkboxes
+- Each melody has its own Play/Stop button for individual playback
+- The "Download MIDI" feature creates a simplified MIDI representation (for a full implementation, you'd need to add a proper MIDI encoding library)
+- The visualization shows a rough representation of the notes in each melody
+
+## Possible Enhancements:
+
+1. **Add a proper MIDI library**: Consider adding a library like `midi-writer-js` for full MIDI file generation:
+   ```
+   npm install midi-writer-js
+   ```
+
+2. **Add more musical styles**: The code structure makes it easy to add new style generators
+
+3. **Add more advanced synthesis**: Tone.js supports more complex synthesizers and effects
+
+4. **Save and load functionality**: Allow users to save their generated compositions
+
+5. **Tempo and key controls**: Add ability to change the tempo and musical key
+
+Enjoy creating music with your new MIDI Generator app!
